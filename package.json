@@ -1,0 +1,9 @@
+{
+  "name": "argusdrive",
+  "version": "1.0.0",
+  "description": "A secure HTTP protocol file transfer system.",
+  "main": "index.js",
+  "repository": "git@github.com:SuperMaxine/ArgusDrive.git",
+  "author": "SuperMaxine <2586540653@qq.com>",
+  "license": "MIT"
+}
