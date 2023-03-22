@@ -272,7 +272,7 @@ from
       <general>
         <show-object-navigation-gutter value="false" />
         <show-spec-declaration-navigation-gutter value="true" />
-        <enable-spellchecking value="false" />
+        <enable-spellchecking value="true" />
         <enable-reference-spellchecking value="false" />
       </general>
       <confirmations>
