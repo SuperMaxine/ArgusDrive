@@ -12,8 +12,11 @@ $(function () {
         }).done(function (data) {
             if (data.code === 0) {
                 alert(data.message);
-                $("#login-username").val("");
-                $("#login-password").val("");
+                // $("#login-username").val("");
+                // $("#login-password").val("");
+
+                // jump to /fileManage
+                window.location.href = "/fileManage";
             } else {
                 alert(data.message);
             }

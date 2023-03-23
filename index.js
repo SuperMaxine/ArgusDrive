@@ -104,6 +104,11 @@ router.get('/', async (ctx, next) => {
     ctx.redirect('/login.html');
 });
 
+router.get('/fileManage', async (ctx, next) => {
+    // 自动跳转到fileManage.html
+    ctx.redirect('/fileManage.html');
+});
+
 app.use(koastatic('./public'));
 app.use(bodyParser());
 app.use(router.routes());
