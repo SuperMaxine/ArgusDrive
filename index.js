@@ -48,39 +48,53 @@ https.createServer(options, app.callback()).listen(https_port);
 
 router.post('/register', async (ctx, next) => {
     const data = ctx.request.body;
-    console.log(ctx.request.body);
     const crypt = await encrypt(data.password);
     await sqliteDB.insertData('insert into userSchema(username, password, email) values(?, ?, ?)', [[data.username, crypt.hash, data.email]]);
-    // 把盐存进数据库
     await sqliteDB.insertData('insert into salt(username, salt) values(?, ?)', [[data.username, crypt.salt]]);
-    ctx.response.body = {
-        code: 0,
-        message: '注册成功'
-    };
+
+    // 确认userSchema表和salt表中是否有刚刚注册的用户
+    const user = await sqliteDB.queryData(`select * from userSchema where username = '${data.username}'`);
+    const salt = await sqliteDB.queryData(`select * from salt where username = '${data.username}'`);
+    if (user.length > 0 && salt.length > 0) {
+        ctx.response.body = {
+            code: 0,
+            message: '注册成功'
+        };
+    }
 });
 
 router.post('/login', async (ctx, next) => {
     const data = ctx.request.body;
-    // 从数据库中获取盐
-    let salt = null;
-    await sqliteDB.queryData(`select * from salt where username = '${data.username}'`, function (rows) {
-        salt = rows[0].salt;
-    });
-    const hashPass = encryptWithSalt(data.password, salt);
-    // 从数据库中获取用户信息
-    let user = null;
-    await sqliteDB.queryData(`select * from userSchema where username = '${data.username}'`, function (rows) {
-        user = rows[0];
-    });
-    if (user.password === hashPass) {
-        ctx.response.body = {
-            code: 0,
-            message: '登录成功'
-        };
-    } else {
+    try {
+        // 从数据库中获取盐
+        const salt = await sqliteDB.queryData(`select * from salt where username = '${data.username}'`);
+        // 从数据库中获取用户信息
+        const user = await sqliteDB.queryData(`select * from userSchema where username = '${data.username}'`);
+        if (salt.length === 0 || user.length === 0) {
+            ctx.response.body = {
+                code: 1,
+                message: '用户不存在'
+            };
+            return;
+        }
+        
+        // noinspection ES6RedundantAwait
+        const hashPass = await encryptWithSalt(data.password, salt[0].salt);
+        if (user[0].password === hashPass) {
+            ctx.response.body = {
+                code: 0,
+                message: '登录成功'
+            };
+        } else {
+            ctx.response.body = {
+                code: 1,
+                message: '用户名或密码错误'
+            };
+        }
+    } catch (e) {
         ctx.response.body = {
             code: 1,
-            message: '用户名或密码错误'
+            message: '登录失败，未知原因'
         };
     }
 });

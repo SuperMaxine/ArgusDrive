@@ -65,16 +65,25 @@ DB.SqliteDB.prototype.insertData = function (sql, objects) {
  * @param callback
  */
 DB.SqliteDB.prototype.queryData = function (sql, callback) {
-    DB.db.all(sql, function (err, rows) {
-        if (null != err) {
-            DB.printErrorInfo(err);
-            return;
-        }
+    return new Promise((resolve, reject) => {
+        DB.db.all(sql, function (err, rows) {
+            if (null != err) {
+                DB.printErrorInfo(err);
+                return;
+            }
 
-        // 处理返回数据
-        if (null != callback) {
-            callback(rows);
-        }
+            // 处理返回数据
+            if (null != callback) {
+                callback(rows);
+            }
+        }, function (err, rows) {
+            if (null != err) {
+                DB.printErrorInfo(err);
+                reject(err);
+            } else {
+                resolve(rows);
+            }
+        });
     });
 };
 
