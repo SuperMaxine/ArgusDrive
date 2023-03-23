@@ -1,7 +1,23 @@
 $(function () {
     $("#login-form").submit(function (event) {
         event.preventDefault();
-        // TODO: login logic
+        // send login request
+        $.ajax({
+            url: "/login",
+            type: "POST",
+            data: {
+                username: $("#login-username").val(),
+                password: $("#login-password").val()
+            }
+        }).done(function (data) {
+            if (data.code === 0) {
+                alert(data.message);
+                $("#login-username").val("");
+                $("#login-password").val("");
+            } else {
+                alert(data.message);
+            }
+        });
     });
 
     $("#register-form").submit(function (event) {
@@ -21,6 +37,8 @@ $(function () {
                 $("#register-username").val("");
                 $("#register-password").val("");
                 $("#register-email").val("");
+            } else {
+                alert(data.message);
             }
         });
     });
