@@ -8,25 +8,24 @@ const deepCopy = require('deep-copy');
  */
 module.exports = function () {
     return async function (ctx, next) {
-        const sessionId = ctx.cookies.get('session_id');
+        const sessionId = ctx.cookies.get('sessionId');
+        if (ctx.originalUrl === 'register') {
+            ctx.loginUser = {code: 0, message: '注册'};
+            await next();
+            return null;
+        }
         if (!sessionId) {
             ctx.loginUser = {code: 1, message: '您还未登录'};
             await next();
             return null;
         }
-        let session = null;
-        await sqliteDB.queryData(`select * from sessionTable where sessionId = '${sessionId}'`, function (rows) {
-            session = rows[0];
-        });
-        if (!session) {
+        const session = await sqliteDB.queryData(`select * from sessionTable where sessionId = '${sessionId}'`);
+        if (session.length === 0) {
             ctx.loginUser = {code: 2, message: '登录态已过期，请重新登录'};
             await next();
             return null;
         }
-        let user = null;
-        await sqliteDB.queryData(`select * from userSchema where username = '${session.username}'`, function (rows) {
-            user = rows[0];
-        });
+        let user = await sqliteDB.queryData(`select * from userSchema where username = '${session.username}'`);
         if (!user) {
             ctx.loginUser = {code: 3, message: '用户不存在'};
             await next();
@@ -35,7 +34,7 @@ module.exports = function () {
         // user = ctx.$tools.deepClone(user);
         user = deepCopy(user);
         delete user.password;
-        ctx.loginUser = {code: 0, data: user, message: '用户不存在'};
+        ctx.loginUser = {code: 0, data: user, message: '登录成功'};
         await next();
         return ctx.loginUser;
     };

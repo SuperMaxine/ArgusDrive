@@ -1,42 +1,21 @@
 const Koa = require('koa');
 const bodyParser = require('koa-body-parser');
 const Router = require('koa-router');
-const koastatic = require('koa-static');
+const views = require('koa-views')
+const session = require('koa-session');
 const fs = require('fs');
 const http = require("http");
 const https = require("https");
+const uuid = require('uuid');
 const SqliteDB = require('./utils/sqlite').SqliteDB;
-const file = "Auth.db";
-const sqliteDB = new SqliteDB(file);
 const {encrypt, encryptWithSalt} = require('./utils/bcrypt.js');
+const loginUser = require('./middleware/loginUser');
+
 
 const app = new Koa();
 let router = new Router();
+const sqliteDB = new SqliteDB("Auth.db");
 
-// 检查sqlite数据库是否存在，不存在则创建
-if (!sqliteDB.exist) {
-    console.log("Creating db file!");
-    fs.openSync(file, 'w');
-    // 创建用户表
-    sqliteDB.createTable(`create table if not exists userSchema(
-        username varchar(255) primary key,
-        password varchar(255) not null,
-        email varchar(255) not null
-    )`);
-
-    // 创建session表
-    sqliteDB.createTable(`create table if not exists sessionTable(
-        username varchar(255) primary key,
-        sessionId varchar(255) not null,
-        createTime varchar(255) not null
-    )`);
-
-    // 创建用户密码加密盐表
-    sqliteDB.createTable(`create table if not exists salt(
-        username varchar(255) primary key,
-        salt varchar(255) not null
-    )`);
-}
 
 const host = '0.0.0.0', http_port = 8080, https_port = 443;
 http.createServer(app.callback()).listen(http_port);
@@ -45,6 +24,7 @@ const options = {
     cert: fs.readFileSync(`${__dirname}/fullchain.pem`, "utf8")
 };
 https.createServer(options, app.callback()).listen(https_port);
+
 
 router.post('/register', async (ctx, next) => {
     const data = ctx.request.body;
@@ -77,6 +57,22 @@ router.post('/login', async (ctx, next) => {
             };
             return;
         }
+
+        // 生成session
+        // const sessionId = uuid.v4();
+        // const createTime = new Date().getTime();
+        const sessionObj = {
+            username: data.username,
+            sessionId: uuid.v4(),
+            createTime: new Date().getTime()
+        }
+        // 将session存入数据库
+        await sqliteDB.insertData('insert into sessionTable(username, sessionId, createTime) values(?, ?, ?)', [[sessionObj.username, sessionObj.sessionId, sessionObj.createTime]]);
+        // 将session存入cookie
+        ctx.cookies.set('sessionId', sessionObj.sessionId, {
+            maxAge: 1000 * 60 * 60 * 24 * 7,
+            httpOnly: true
+        });
         
         // noinspection ES6RedundantAwait
         const hashPass = await encryptWithSalt(data.password, salt[0].salt);
@@ -100,16 +96,33 @@ router.post('/login', async (ctx, next) => {
 });
 
 router.get('/', async (ctx, next) => {
-    // 自动跳转到login.html
-    ctx.redirect('/login.html');
+    // 渲染login.html
+    await ctx.render('login');
 });
 
 router.get('/fileManage', async (ctx, next) => {
-    // 自动跳转到fileManage.html
-    ctx.redirect('/fileManage.html');
+    // 检查用户是否登录
+    console.log(ctx.loginUser)
+    if (ctx.loginUser.code !== 0) {
+        await ctx.render('login');
+        return;
+    }
+    // 渲染fileManage.html
+    await ctx.render('fileManage', {
+        username: ctx.loginUser.username
+    });
 });
 
-app.use(koastatic('./public'));
+
+app.use(views(__dirname + '/public'));
+app.keys = [uuid.v4()];
+app.use(session({
+    key: "koa:sess",
+    maxAge: 24 * 60 * 60 * 1000,
+    httpOnly: true,
+    rolling: true
+}, app))
 app.use(bodyParser());
+app.use(loginUser());
 app.use(router.routes());
 app.use(router.allowedMethods());

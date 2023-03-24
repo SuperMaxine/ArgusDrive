@@ -10,12 +10,37 @@ const DB = {};
  * @constructor
  */
 DB.SqliteDB = function (file) {
+    DB.exist = fs.existsSync(file);
     DB.db = new sqlite3.Database(file);
 
-    DB.exist = fs.existsSync(file);
     if (!DB.exist) {
         console.log("Creating db file!");
         fs.openSync(file, 'w');
+        // 创建用户表
+        DB.db.serialize(function () {
+            DB.db.run(`create table if not exists userSchema(
+                username varchar(255) primary key,
+                password varchar(255) not null,
+                email varchar(255) not null
+            )`);
+        });
+
+        // 创建session表
+        DB.db.serialize(function () {
+            DB.db.run(`create table if not exists sessionTable(
+                username varchar(255) primary key,
+                sessionId varchar(255) not null,
+                createTime varchar(255) not null
+            )`);
+        });
+
+        // 创建用户密码加密盐表
+        DB.db.serialize(function () {
+            DB.db.run(`create table if not exists salt(
+                username varchar(255) primary key,
+                salt varchar(255) not null
+            )`);
+        });
     }
 };
 
