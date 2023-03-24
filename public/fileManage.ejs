@@ -8,6 +8,10 @@
     <script src="https://cdn.bootcss.com/jquery/3.2.1/jquery.min.js"></script>
     <!-- 引入Bootstrap JS -->
     <script src="https://cdn.bootcss.com/bootstrap/4.0.0/js/bootstrap.min.js"></script>
+    <!-- 引入axios -->
+    <script src="https://cdn.bootcss.com/axios/0.19.0/axios.min.js"></script>
+    <!-- 引入qs -->
+    <script src="https://cdn.bootcss.com/qs/6.7.0/qs.min.js"></script>
     <!-- 自定义CSS -->
     <style>
         /* 调整文件列表的样式 */
@@ -82,7 +86,7 @@
         <li class="card file-item">
             <div class="card-body">
                 <h5 class="card-title">example_file.docx</h5>
-                <p class="card-text">上传时间：2020-01-01 12:00:00</p>
+<!--                <p class="card-text">上传时间：2020-01-01 12:00:00</p>-->
             </div>
         </li>
         <!-- 可以使用JS动态生成文件项，也可以在后端渲染页面时直接输出 -->
@@ -91,6 +95,7 @@
 <!-- 上传和下载进度框 -->
 <div class="progress-box">
     <h4>文件上传中</h4>
+    <div class="filename"></div>
     <div class="progress">
         <div class="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
     </div>

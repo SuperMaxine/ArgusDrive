@@ -45,7 +45,8 @@ DB.SqliteDB = function (file) {
         // 创建用户文件表
         DB.db.serialize(function () {
             DB.db.run(`create table if not exists fileSchema(
-                username varchar(255) primary key,
+                _id integer primary key autoincrement,
+                username varchar(255) not null,
                 fileName varchar(255) not null
             )`);
         });

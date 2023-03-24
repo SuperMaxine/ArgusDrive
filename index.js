@@ -8,6 +8,8 @@ const fs = require('fs');
 const http = require("http");
 const https = require("https");
 const uuid = require('uuid');
+const multiparty = require('multiparty');
+const formidable = require('formidable');
 const SqliteDB = require('./utils/sqlite').SqliteDB;
 const {encrypt, encryptWithSalt} = require('./utils/bcrypt.js');
 const loginUser = require('./middleware/loginUser');
@@ -19,7 +21,9 @@ const sqliteDB = new SqliteDB("Auth.db");
 
 
 const host = '0.0.0.0', http_port = 8080, https_port = 443;
-http.createServer(app.callback()).listen(http_port);
+const HOSTNAME = `${host}:${https_port}`;
+const SERVER_PATH = `${__dirname}/upload`;
+// http.createServer(app.callback()).listen(http_port);
 const options = {
     key: fs.readFileSync(`${__dirname}/privkey.pem`, "utf8"),
     cert: fs.readFileSync(`${__dirname}/fullchain.pem`, "utf8")
@@ -130,6 +134,248 @@ router.get('/fileManage', async (ctx, next) => {
         username: ctx.loginUser.data[0].username,
         files: files
     });
+});
+
+router.get('/list', async (ctx, next) => {
+    const files = await sqliteDB.queryData(`select * from fileSchema where username = '${ctx.loginUser.data[0].username}'`);
+    ctx.response.body = {
+        code: 0,
+        message: '获取文件列表成功',
+        data: files
+    };
+});
+
+router.post('/uploaded', async (ctx, next) => {
+    try {
+        console.log("in uploaded")
+        const {
+            b64_filename,
+            suffix
+        } = ctx.request.body;
+        const dirPath = `${SERVER_PATH}/${b64_filename}.${suffix}`;
+        console.log("dirPath", dirPath)
+        const fileList = fs.readdirSync(dirPath);
+        fileList.sort((a, b) => {
+            const reg = /_([\d+])/;
+            return reg.exec(a)[1] - reg.exec(b)[1];
+        });
+        ctx.body = {
+            code: 0,
+            message: '获取成功',
+            fileList: fileList
+        }
+    } catch (err) {
+        ctx.body = {
+            code: 0,
+            message: '获取失败'
+        }
+    }
+});
+
+//利用multiparty插件解析前端传来的form-data格式的数据，并上传至服务器
+const multipartyUpload = function multipartyUpload(req, autoUpload) {
+    let config = {
+        maxFieldsSize: 200 * 1024 * 1024
+    }
+    if (autoUpload) config.uploadDir = SERVER_PATH;
+    return new Promise((resolve, reject) => {
+        new multiparty.Form(config).parse(req, (err, fields, files) => {
+            if (err) {
+                reject(err);
+                return;
+            }
+            resolve({
+                fields,
+                files
+            });
+        });
+    });
+}
+
+//检测文件是否已经存在
+const exists = function exists(path) {
+    return new Promise((resolve, reject) => {
+        fs.access(path, fs.constants.F_OK, err => {
+            if (err) {
+                resolve(false);
+                return;
+            }
+            resolve(true);
+        });
+    });
+}
+
+//将传进来的文件数据写入服务器
+//form-data格式的数据将以流的形式写入
+//BASE64格式数据则直接将内容写入
+const writeFile = function writeFile(serverPath, file, isStream) {
+    return new Promise((resolve, reject) => {
+        if (isStream) {
+            try {
+                let readStream = fs.createReadStream(file.path);
+                let writeStream = fs.createWriteStream(serverPath);
+                readStream.pipe(writeStream);
+                readStream.on('end', () => {
+                    resolve({
+                        result: true,
+                        message: '上传成功！'
+                    });
+                    fs.unlinkSync(file.path);
+                });
+            } catch (err) {
+                resolve({
+                    result: false,
+                    message: err
+                })
+            }
+        } else {
+            fs.writeFile(serverPath, file, err => {
+                if (err) {
+                    resolve({
+                        result: false,
+                        message: err
+                    })
+                    return;
+                }
+                resolve({
+                    result: true,
+                    message: '上传成功！'
+                });
+            });
+        }
+    });
+}
+
+//定义延迟函数
+const delay = function delay(interval) {
+    typeof interval !== 'number' ? interval = 1000 : null;
+    return new Promise((resolve, reject) => {
+        setTimeout(function () {
+            resolve();
+        }, interval);
+    });
+}
+
+const mergeFiles = function mergeFiles(hash, username, count) {
+    return new Promise(async (resolve, reject) => {
+        const dirPath = `${SERVER_PATH}/${hash}`;
+        if (!fs.existsSync(dirPath)) {
+            reject('还没上传文件，请先上传文件');
+            return;
+        }
+        const files = fs.readdirSync(dirPath);
+        if (files.length < count) {
+            reject('文件还未上传完成，请稍后再试');
+            return;
+        }
+
+        // 判断${SERVER_PATH}/${username}文件夹是否存在，不存在则创建
+        const userDir = `${SERVER_PATH}/${username}`;
+        if (!fs.existsSync(userDir)) {
+            fs.mkdirSync(userDir);
+        }
+
+        let suffix;
+        files.sort((a, b) => {
+            const reg = /_(\d+)/;
+            return reg.exec(a)[1] - reg.exec(b)[1];
+        }).forEach(item => {
+            !suffix ? suffix = /\.([0-9a-zA-Z]+)$/.exec(item)[1] : null;
+            //将每个文件读取出来并append到以hash命名的新文件中
+            fs.appendFileSync(`${SERVER_PATH}/${username}/${hash}.${suffix}`, fs.readFileSync(`${dirPath}/${item}`));
+            fs.unlinkSync(`${dirPath}/${item}`); //删除切片文件
+        });
+
+        // 将session存入数据库
+        await sqliteDB.insertData('insert into fileSchema(username, fileName) values(?, ?)', [[username, `${hash}.${suffix}`]]);
+
+        await delay(1000); //等待1秒后删除新产生的文件夹
+        fs.rmdirSync(dirPath);
+
+        resolve({
+            path: `${HOSTNAME}/upload/${username}/${hash}.${suffix}`,
+            filename: `${hash}.${suffix}`
+        })
+    });
+}
+
+router.post('/upload_chunk', async (ctx, next) => {
+    try {
+        console.log("in upload_chunk")
+        let {
+            files,
+            fields
+        } = await multipartyUpload(ctx.req, false);
+        let file = (files && files.file[0]) || {};
+        let filename = (fields && fields.filename[0]) || '';
+        let [, hash] = /^([^_]+)_(\d+)/.exec(filename);
+        const dirPath = `${SERVER_PATH}/${hash}`;
+        if (!fs.existsSync(dirPath)) {
+            fs.mkdirSync(dirPath);
+        }
+        const filePath = `${dirPath}/${filename}`;
+        const isExists = await exists(filePath);
+        if (isExists) {
+            ctx.body = {
+                code: 0,
+                message: '文件已经存在',
+                originalFilename: filename,
+                serverPath: filePath.replace(__dirname, HOSTNAME)
+            }
+            return;
+        }
+        await writeFile(filePath, file, true);
+        ctx.body = {
+            code: 0,
+            message: '文件上传成功',
+            serverPath: filePath.replace(__dirname, HOSTNAME)
+        }
+    } catch (err) {
+        ctx.body = {
+            code: 1,
+            message: err
+        }
+    }
+});
+
+//解析post请求参数，content-type为application/x-www-form-urlencoded 或 application/josn
+const parsePostParams = function parsePostParams(req) {
+    return new Promise((resolve, reject) => {
+        let form = new formidable.IncomingForm();
+        form.parse(req, (err, fields) => {
+            if (err) {
+                reject(err);
+                return;
+            }
+            resolve(fields);
+        });
+    });
+}
+
+//合并切片文件
+router.post('/upload_merge', async (ctx, next) => {
+    console.log("in upload_merge")
+    // const {
+    //     hash,
+    //     count
+    // } = await parsePostParams(ctx.req);
+    const {
+        hash,
+        count
+    } = ctx.request.body;
+    console.log("hash: " + hash + " count: " + count)
+    const username = ctx.loginUser.data[0].username;
+    console.log("username: " + username)
+    const {
+        path,
+        filename
+    } = await mergeFiles(hash, username, count);
+    ctx.body = {
+        code: 0,
+        message: '文件上传成功',
+        path,
+        filename
+    }
 });
 
 app.use(static(__dirname + '/resources'));
