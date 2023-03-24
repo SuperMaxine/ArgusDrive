@@ -25,8 +25,8 @@ module.exports = function () {
             await next();
             return null;
         }
-        let user = await sqliteDB.queryData(`select * from userSchema where username = '${session.username}'`);
-        if (!user) {
+        let user = await sqliteDB.queryData(`select * from userSchema where username = '${session[0].username}'`);
+        if (user.length === 0) {
             ctx.loginUser = {code: 3, message: '用户不存在'};
             await next();
             return null;

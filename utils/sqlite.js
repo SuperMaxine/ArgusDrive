@@ -41,6 +41,14 @@ DB.SqliteDB = function (file) {
                 salt varchar(255) not null
             )`);
         });
+
+        // 创建用户文件表
+        DB.db.serialize(function () {
+            DB.db.run(`create table if not exists fileSchema(
+                username varchar(255) primary key,
+                fileName varchar(255) not null
+            )`);
+        });
     }
 };
 

@@ -73,6 +73,10 @@ router.post('/login', async (ctx, next) => {
             maxAge: 1000 * 60 * 60 * 24 * 7,
             httpOnly: true
         });
+        ctx.cookies.set('username', data.username, {
+            maxAge: 1000 * 60 * 60 * 24 * 7,
+            httpOnly: true
+        });
         
         // noinspection ES6RedundantAwait
         const hashPass = await encryptWithSalt(data.password, salt[0].salt);
@@ -107,14 +111,17 @@ router.get('/fileManage', async (ctx, next) => {
         await ctx.render('login');
         return;
     }
+    const files = await sqliteDB.queryData(`select * from fileSchema where username = '${ctx.loginUser.data[0].username}'`);
+    console.log("files", files)
     // 渲染fileManage.html
     await ctx.render('fileManage', {
-        username: ctx.loginUser.username
+        username: ctx.loginUser.data[0].username,
+        files: files
     });
 });
 
 
-app.use(views(__dirname + '/public'));
+app.use(views(__dirname + '/public', { extension: "ejs" }));
 app.keys = [uuid.v4()];
 app.use(session({
     key: "koa:sess",
