@@ -1,6 +1,7 @@
 const Koa = require('koa');
 const bodyParser = require('koa-body-parser');
 const Router = require('koa-router');
+const static = require('koa-static');
 const views = require('koa-views')
 const session = require('koa-session');
 const fs = require('fs');
@@ -66,6 +67,14 @@ router.post('/login', async (ctx, next) => {
             sessionId: uuid.v4(),
             createTime: new Date().getTime()
         }
+
+        // 检查session是否过期
+        const session = await sqliteDB.queryData(`select * from sessionTable where username = '${data.username}'`);
+        if (session.length > 0) {
+            // 将session从数据库中删除
+            await sqliteDB.executeSql(`delete from sessionTable where username = '${data.username}'`);
+        }
+
         // 将session存入数据库
         await sqliteDB.insertData('insert into sessionTable(username, sessionId, createTime) values(?, ?, ?)', [[sessionObj.username, sessionObj.sessionId, sessionObj.createTime]]);
         // 将session存入cookie
@@ -96,6 +105,7 @@ router.post('/login', async (ctx, next) => {
             code: 1,
             message: '登录失败，未知原因'
         };
+        // throw e;
     }
 });
 
@@ -108,7 +118,9 @@ router.get('/fileManage', async (ctx, next) => {
     // 检查用户是否登录
     console.log(ctx.loginUser)
     if (ctx.loginUser.code !== 0) {
-        await ctx.render('login');
+        // await ctx.render('login');
+        ctx.status = 301;
+        ctx.redirect('/');
         return;
     }
     const files = await sqliteDB.queryData(`select * from fileSchema where username = '${ctx.loginUser.data[0].username}'`);
@@ -120,7 +132,7 @@ router.get('/fileManage', async (ctx, next) => {
     });
 });
 
-
+app.use(static(__dirname + '/resources'));
 app.use(views(__dirname + '/public', { extension: "ejs" }));
 app.keys = [uuid.v4()];
 app.use(session({

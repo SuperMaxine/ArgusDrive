@@ -14,21 +14,33 @@ module.exports = function () {
             await next();
             return null;
         }
-        if (!sessionId) {
+        if (!sessionId && ctx.originalUrl !== 'login') {
             ctx.loginUser = {code: 1, message: '您还未登录'};
             await next();
+            ctx.request.body = {
+                code: 1,
+                message: '登陆失败'
+            }
             return null;
         }
         const session = await sqliteDB.queryData(`select * from sessionTable where sessionId = '${sessionId}'`);
         if (session.length === 0) {
             ctx.loginUser = {code: 2, message: '登录态已过期，请重新登录'};
             await next();
+            ctx.request.body = {
+                code: 1,
+                message: '登陆失败'
+            }
             return null;
         }
         let user = await sqliteDB.queryData(`select * from userSchema where username = '${session[0].username}'`);
         if (user.length === 0) {
             ctx.loginUser = {code: 3, message: '用户不存在'};
             await next();
+            ctx.request.body = {
+                code: 1,
+                message: '登陆失败'
+            }
             return null;
         }
         // user = ctx.$tools.deepClone(user);
