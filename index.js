@@ -13,6 +13,7 @@ const formidable = require('formidable');
 const SqliteDB = require('./utils/sqlite').SqliteDB;
 const {encrypt, encryptWithSalt} = require('./utils/bcrypt.js');
 const loginUser = require('./middleware/loginUser');
+const path = require("path");
 
 
 const app = new Koa();
@@ -338,20 +339,6 @@ router.post('/upload_chunk', async (ctx, next) => {
     }
 });
 
-//解析post请求参数，content-type为application/x-www-form-urlencoded 或 application/josn
-const parsePostParams = function parsePostParams(req) {
-    return new Promise((resolve, reject) => {
-        let form = new formidable.IncomingForm();
-        form.parse(req, (err, fields) => {
-            if (err) {
-                reject(err);
-                return;
-            }
-            resolve(fields);
-        });
-    });
-}
-
 //合并切片文件
 router.post('/upload_merge', async (ctx, next) => {
     console.log("in upload_merge")
@@ -377,6 +364,107 @@ router.post('/upload_merge', async (ctx, next) => {
         filename
     }
 });
+
+
+function createFileResHeader(fileName, size) {
+    return {
+        // 告诉浏览器这是一个需要以附件形式下载的文件（浏览器下载的默认行为，前端可以从这个响应头中获取文件名：前端使用ajax请求下载的时候，后端若返回文件流，此时前端必须要设置文件名-主要是为了获取文件后缀，否则前端会默认为txt文件）
+        'Content-Disposition': 'attachment; filename=' + encodeURIComponent(fileName),
+        // 告诉浏览器是二进制文件，不要直接显示内容
+        'Content-Type': 'application/octet-stream',
+        // 下载文件大小（HEAD请求时，主要获取Content-Length）
+        'Content-Length': size,
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'X-Requested-With',
+        'Access-Control-Allow-Methods': 'PUT,POST,GET,DELETE,OPTIONS',
+        //如果不暴露header，那就Refused to get unsafe header "Content-Disposition"
+        "Access-Control-Expose-Headers":'Content-Disposition'
+    }
+}
+
+function getRange(range) {
+    let start = 0;
+    let end = 0;
+    if (range) {
+        const arr = range.split('-');
+        start = Number(arr[0].split('=')[1]);
+        end = Number(arr[1]);
+    }
+    return {
+        start,
+        end
+    }
+}
+
+// 大文件下载 - 分片下载  (head请求不会返回响应体)
+router.get('/download', async (ctx, next) => {
+    console.log("in download");
+    // 获取文件路径
+    const fileName = ctx.query.name;
+    let filePath = path.join(__dirname, `./upload/${ctx.loginUser.data[0].username}/${fileName}`)
+    console.log("filePath:", filePath);
+    // 1、 判断文件是否存在
+    try {
+        fs.accessSync(filePath);
+        console.log("文件存在");
+    } catch (error) {
+        // next.send({
+        //     status: 201,
+        //     message: '下载的文件资源不存在'
+        // });
+        ctx.body = {
+            code: 1,
+            message: '下载的文件资源不存在'
+        }
+    }
+
+    try {
+        // 获取文件大小
+        const size = fs.statSync(filePath).size;
+        const range = ctx.headers['range'];
+        const {start, end} = getRange(range);
+        if (!range) {
+            // 2、 head请求同时请求头中不带range字段，返回文件大小，前端根据文件大小去决定要分成几段
+            ctx.res.writeHead(200, Object.assign({'Accept-Ranges': 'bytes'}, createFileResHeader(fileName, size)));
+        } else {
+            const resHeaderParams = {};
+            // 3、检查请求范围
+            if (start >= size || end >= size) {
+                ctx.res.status = 416;
+                resHeaderParams['Content-Range'] = `bytes */${size}`;
+            } else {
+                // 4、返回206：客户端表明自己只需要目标URL上的部分资源的时候返回的
+                ctx.res.status = 206;
+                resHeaderParams['Content-Range'] = `bytes ${start}-${end ? end : size - 1}/${size}`;
+            }
+            /**
+             * 这里不能使用res.writeHead前端会报: xxx.net::ERR_CONTENT_LENGTH_MISMATCH 206 (Partial Content)（一个请求的时候正常，多个并发请求的时候就会报这个，原因暂时未知）
+             * res.writeHead 和res.setHeader 啥区别，官网没有给出明确说明，https://blog.csdn.net/qq_45515863/article/details/103213937
+             */
+            // res.writeHead(res.status, Object.assign({'Accept-Ranges': 'bytes'}, createFileResHeader(fileName, size), resHeaderParams), 200);
+            ctx.res.statusCode = 206;
+            ctx.res.setHeader("Accept-Ranges", "bytes");
+            ctx.res.setHeader("Content-Range", `bytes ${start}-${end ? end : size - 1}/${size}`);
+            ctx.res.setHeader("Content-Disposition", 'attachment; filename=' + encodeURIComponent(fileName));
+            ctx.res.setHeader("Content-Type", "application/octet-stream");
+        }
+        // 5、返回部分文件
+        // fs.createReadStream(filePath, {start, end}).pipe(ctx.res);
+        ctx.body = fs.createReadStream(filePath, {start, end})
+        console.log("返回部分文件");
+    } catch (err) {
+        // next.send({
+        //     status: 201,
+        //     message: err
+        // })
+        ctx.body = {
+            code: 1,
+            message: err
+        }
+
+    }
+});
+
 
 app.use(static(__dirname + '/resources'));
 app.use(views(__dirname + '/public', { extension: "ejs" }));
