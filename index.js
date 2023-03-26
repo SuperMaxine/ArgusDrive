@@ -64,37 +64,34 @@ router.post('/login', async (ctx, next) => {
             return;
         }
 
-        // 生成session
-        // const sessionId = uuid.v4();
-        // const createTime = new Date().getTime();
-        const sessionObj = {
-            username: data.username,
-            sessionId: uuid.v4(),
-            createTime: new Date().getTime()
-        }
-
-        // 检查session是否过期
-        const session = await sqliteDB.queryData(`select * from sessionTable where username = '${data.username}'`);
-        if (session.length > 0) {
-            // 将session从数据库中删除
-            await sqliteDB.executeSql(`delete from sessionTable where username = '${data.username}'`);
-        }
-
-        // 将session存入数据库
-        await sqliteDB.insertData('insert into sessionTable(username, sessionId, createTime) values(?, ?, ?)', [[sessionObj.username, sessionObj.sessionId, sessionObj.createTime]]);
-        // 将session存入cookie
-        ctx.cookies.set('sessionId', sessionObj.sessionId, {
-            maxAge: 1000 * 60 * 60 * 24 * 7,
-            httpOnly: true
-        });
-        ctx.cookies.set('username', data.username, {
-            maxAge: 1000 * 60 * 60 * 24 * 7,
-            httpOnly: true
-        });
-        
         // noinspection ES6RedundantAwait
         const hashPass = await encryptWithSalt(data.password, salt[0].salt);
         if (user[0].password === hashPass) {
+            // 生成session
+            const sessionObj = {
+                username: data.username,
+                sessionId: uuid.v4(),
+                createTime: new Date().getTime()
+            }
+
+            // 检查session是否过期
+            const session = await sqliteDB.queryData(`select * from sessionTable where username = '${data.username}'`);
+            if (session.length > 0) {
+                // 将session从数据库中删除
+                await sqliteDB.executeSql(`delete from sessionTable where username = '${data.username}'`);
+            }
+
+            // 将session存入数据库
+            await sqliteDB.insertData('insert into sessionTable(username, sessionId, createTime) values(?, ?, ?)', [[sessionObj.username, sessionObj.sessionId, sessionObj.createTime]]);
+            // 将session存入cookie
+            ctx.cookies.set('sessionId', sessionObj.sessionId, {
+                maxAge: 1000 * 60 * 60 * 24 * 7,
+                httpOnly: true
+            });
+            ctx.cookies.set('username', data.username, {
+                maxAge: 1000 * 60 * 60 * 24 * 7,
+                httpOnly: true
+            });
             ctx.response.body = {
                 code: 0,
                 message: '登录成功'
