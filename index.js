@@ -33,18 +33,25 @@ https.createServer(options, app.callback()).listen(https_port);
 
 
 router.post('/register', async (ctx, next) => {
-    const data = ctx.request.body;
-    const crypt = await encrypt(data.password);
-    await sqliteDB.insertData('insert into userSchema(username, password, email) values(?, ?, ?)', [[data.username, crypt.hash, data.email]]);
-    await sqliteDB.insertData('insert into salt(username, salt) values(?, ?)', [[data.username, crypt.salt]]);
+    try{
+        const data = ctx.request.body;
+        const crypt = await encrypt(data.password);
+        await sqliteDB.insertData('insert into userSchema(username, password, email) values(?, ?, ?)', [[data.username, crypt.hash, data.email]]);
+        await sqliteDB.insertData('insert into salt(username, salt) values(?, ?)', [[data.username, crypt.salt]]);
 
-    // 确认userSchema表和salt表中是否有刚刚注册的用户
-    const user = await sqliteDB.queryData(`select * from userSchema where username = '${data.username}'`);
-    const salt = await sqliteDB.queryData(`select * from salt where username = '${data.username}'`);
-    if (user.length > 0 && salt.length > 0) {
+        // 确认userSchema表和salt表中是否有刚刚注册的用户
+        const user = await sqliteDB.queryData(`select * from userSchema where username = '${data.username}'`);
+        const salt = await sqliteDB.queryData(`select * from salt where username = '${data.username}'`);
+        if (user.length > 0 && salt.length > 0) {
+            ctx.response.body = {
+                code: 0,
+                message: '注册成功'
+            };
+        }
+    } catch (e) {
         ctx.response.body = {
-            code: 0,
-            message: '注册成功'
+            code: 1,
+            message: '注册失败'
         };
     }
 });
